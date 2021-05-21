@@ -1,0 +1,1 @@
+pub const TELNET_OPTION_TLS_CODE: u8 = 46;
