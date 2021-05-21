@@ -1,0 +1,10 @@
+[package]
+name = "mud-portal"
+version = "0.1.0"
+authors = ["ChaosCat <shady3300@outlook.com>"]
+edition = "2018"
+
+[dependencies]
+telnet = "0.1.4"
+log = "0.4.14"
+simple_logger = "1.11.0"
