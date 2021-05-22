@@ -1,7 +1,8 @@
 use telnet::{Telnet, TelnetEvent, TelnetOption, NegotiationAction};
 use crate::network::telnet::comm::{echo_action_agreement, handle_linemode_sb};
-use std::io::{stdout, stdin, Write, BufRead};
+use std::io::{stdout, stdin, Write, BufRead, Error};
 use crate::network::telnet::consts::TELNET_OPTION_TLS_CODE;
+use std::any::Any;
 
 // TODO: Implement to be context sensitive
 struct MorgenGrauenClient {
@@ -15,61 +16,63 @@ pub fn client_loop(mut connection: Telnet) -> Result<(), Box<dyn std::error::Err
     let stdin = stdin();
     let mut lout = stdout.lock();
     let mut lin = stdin.lock();
+    let mut should_request_input= false;
     loop {
         curr_event = connection.read().expect("Failed reading from server");
         match curr_event {
             TelnetEvent::Data(data) => {
-                println!("Received data");
+                trace!("Received data");
                 lout.write_all(data.as_ref())?;
+                should_request_input = true;
             },
             TelnetEvent::UnknownIAC(iac_id) => {
-                eprintln!("Error: unrecognized IAC: {}", iac_id);
+                error!("Error: unrecognized IAC: {}", iac_id);
             },
             TelnetEvent::Negotiation(action, option) => {
-                println!("Received negotiaition: {:?} {:?}", action, option);
+                info!("Received negotiaition: {:?} {:?}", action, option);
                 match option {
                     TelnetOption::TransmitBinary => {
-                        println!("Agreeing to binary transmission");
+                        info!("Agreeing to binary transmission");
                         echo_action_agreement(&mut connection, action, option);
                     },
                     TelnetOption::EOR => {
-                        println!("Agreeing to End-Of-Record transmission");
+                        info!("Agreeing to End-Of-Record transmission");
                         echo_action_agreement(&mut connection, action, option);
                     },
                     TelnetOption::NAWS => {
-                        println!("Agreeing to window-size subnegotiation (without initiating one)");
+                        info!("Agreeing to window-size subnegotiation (without initiating one)");
                         echo_action_agreement(&mut connection, action, option);
                     },
                     TelnetOption::TTYPE => {
-                        println!("Rejecting Terminal Type option");
+                        info!("Rejecting Terminal Type option");
                         //echo_action_agreement(&mut connection, action, option);
                         connection.negotiate(NegotiationAction::Wont, TelnetOption::TTYPE);
                     }
                     TelnetOption::Linemode => {
-                        println!("Received Linemode subnegotiation, rejecting");
+                        info!("Received Linemode subnegotiation, rejecting");
                         // echo_action_agreement(&mut connection, action, option);
                         connection.negotiate(NegotiationAction::Wont, TelnetOption::Linemode)
                     },
                     TelnetOption::UnknownOption(unk_value) => {
                         if unk_value == TELNET_OPTION_TLS_CODE {
-                            println!("TLS requested, rejecting");
+                            warn!("TLS requested, rejecting");
                             connection.negotiate(NegotiationAction::Wont,
                                                  TelnetOption::UnknownOption(
                                                      TELNET_OPTION_TLS_CODE));
                         } else {
-                            eprintln!("Unknown option received: {}, rejecting", option.to_byte());
+                            error!("Unknown option received: {}, rejecting", option.to_byte());
                             connection.negotiate(NegotiationAction::Wont, option)
                         }
                     },
                     _ => {
-                        eprintln!("Option: {} unsupported, rejecting", option.to_byte());
+                        error!("Option: {} unsupported, rejecting", option.to_byte());
                         connection.negotiate(NegotiationAction::Wont, option)
                     }
                 };
             },
             TelnetEvent::Subnegotiation(option, subnegotiation_data) => {
-                println!("Received subnegotiation for option: {:?}", option);
-                print!("\tData: ");
+                trace!("Received subnegotiation for option: {:?}", option);
+                trace!("\tData: ");
                 for c in subnegotiation_data.as_ref() {
                     print!("{:02x} ", *c);
                 }
@@ -82,24 +85,30 @@ pub fn client_loop(mut connection: Telnet) -> Result<(), Box<dyn std::error::Err
                 }
             },
             TelnetEvent::TimedOut  => {
-                eprintln!("Connection timed out~!");
+                error!("Connection timed out~!");
             },
             TelnetEvent::NoData => {
-                eprintln!("Telnet NoData received")
+                error!("Telnet NoData received")
             },
             TelnetEvent::Error(err) => {
-                eprintln!("Error: {}", err)
+                error!("Error: {}", err)
             }
         };
         lout.flush();
-        lin.read_line(&mut input).expect("Failed reading user input");
-        print!("{}", input);
-        if input.contains("##") {
-            break;
-        }
-        if input.contains("!!") {
-            println!("Negotiating binary transmission");
-            connection.write(input.replace("!!", "").as_bytes());
+
+        // Request input only on Data Telnet Event
+        if should_request_input {
+            should_request_input = false;
+            match lin.read_line(&mut input) {
+                Ok(bytes_read) => {
+                    trace!("User input ({} bytes): {}", bytes_read, input);
+                    connection.write(input.as_bytes());
+                }
+                Err(err) => {
+                    should_request_input = true;
+                    error!("Failed reading stdin: {}", err)
+                }
+            }
         }
         input.clear();
     }

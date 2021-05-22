@@ -7,4 +7,4 @@ edition = "2018"
 [dependencies]
 telnet = "0.1.4"
 log = "0.4.14"
-simple_logger = "1.11.0"
+simple-logging = "2.0.2"

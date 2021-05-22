@@ -1,24 +1,21 @@
 #[macro_use] extern crate log;
-#[macro_use] extern crate simple_logger;
+extern crate simple_logging;
 
 pub mod client;
 pub mod network;
 
-use telnet::{Telnet, TelnetEvent, NegotiationAction, TelnetOption};
-use std::io::{stdin, stdout, Write, BufRead};
-use std::convert::TryFrom;
-use std::fmt::{Error, Display, Formatter};
+use telnet::Telnet;
 use crate::client::morgengrauen::client_loop;
 use crate::client::consts::MORGENGRUEN_CONNECTION_INFO;
-use simple_logger::SimpleLogger;
-use log::SetLoggerError;
+use log::LevelFilter;
 
 // TODO: A specialized error encompassing possibilities
 
 
 fn main() -> Result<(), Box<dyn std::error::Error>>{
 
-    match SimpleLogger::new().init() {
+
+    match  simple_logging::log_to_file("logs/trace.log", LevelFilter::Trace) {
         Ok(_) => info!("Logger initialized"),
         Err(err) => {
             eprintln!("Logger initialization failed with error: {}", err);
@@ -30,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
                                          1028) {
         Ok(conn) => conn,
         Err(err) => {
-            eprintln!("Connection establishment failed!");
+            eprintln!("Connection establishment failed with error: {}", err);
             return Ok(())
         }
     };
